@@ -38,88 +38,6 @@ class ValetudoXiaomiVacuum {
         state); // cleaning
     });
 
-    this.device.isGoingHome((error, state) => {
-      if (error) { return; }
-
-      this.goHomeService.updateCharacteristic(Characteristic.On,
-        state); // driving home
-    });
-
-    this.device.isSpotCleaning((error, state) => {
-      if (error) { return; }
-
-      this.spotCleanService.updateCharacteristic(Characteristic.On,
-        state); // spot cleaning
-    });
-
-    if (this.device.powerControl) {
-      if (this.device.powerControl.highSpeed) {
-        this.device.isHighSpeedMode((error, highSpeedMode) => {
-          if (error) {
-            return;
-          }
-          this.highSpeedService.updateCharacteristic(Characteristic.On, highSpeedMode);
-        });
-      }
-
-      if (this.device.powerControl.mop) {
-        this.device.isMopMode((error, mopMode) => {
-          if (error) {
-            return;
-          }
-          this.mopService.updateCharacteristic(Characteristic.On, mopMode);
-        });
-      }
-    }
-  }
-
-  getHighSpeedMode(callback) {
-    this.device.isHighSpeedMode((error, status) => {
-      if (error) {
-        callback(error);
-      } else {
-        callback(null, status);
-      }
-    });
-  }
-
-  getMopMode(callback) {
-    this.device.isMopMode((error, mopMode) => {
-      if (error) {
-        callback(error);
-      } else {
-        callback(null, mopMode);
-      }
-    });
-  }
-
-  async setFanSpeedRequest(value) {
-    try {
-      await this.device.setFanSpeedRequest(value);
-    } catch (e) {
-      this.log.error(`Failed to change fan power: ${e}`);
-      throw (e);
-    }
-  }
-
-  async setFanSpeed(value, callback) {
-    this.log.debug(`Setting fan power to ${value}`);
-
-    try {
-      await this.device.setFanSpeed(value);
-      callback();
-    } catch (e) {
-      this.log.error(`Failed to change fan power: ${e}`);
-      callback();
-    }
-  }
-
-  setHighSpeedMode(on, callback) {
-    this.device.setHighSpeedMode(on, callback);
-  }
-
-  setMopMode(on, callback) {
-    this.device.setMopMode(on, callback);
   }
 
   getBattery(callback) {
@@ -170,58 +88,6 @@ class ValetudoXiaomiVacuum {
     }
   }
 
-  async doFind(state, callback) {
-    this.log.debug('Finding');
-    if (state) {
-      this.device.doFind((error) => {
-        callback(error);
-
-        setTimeout(() => {
-          this.findService.updateCharacteristic(Characteristic.On, false);
-        }, 250);
-      });
-    } else {
-      callback(null);
-    }
-  }
-
-  identify(callback) {
-    this.log.debug('Identifying');
-    this.device.doFind((error) => {
-      callback(error);
-    });
-  }
-
-  async goHome(state, callback) {
-    const { log } = this;
-
-    if (state) {
-      log.debug('Executing go home');
-
-      try {
-        await this.device.goHome((error) => {
-          callback(error);
-        });
-      } catch (e) {
-        log.error(`Failed to execute go home: ${e}`);
-      }
-    } else {
-      callback(null);
-    }
-  }
-
-  isGoingHome(callback) {
-    this.device.isGoingHome((error, state) => {
-      this.log.debug(`Is going home? error: ${error}, state: ${state}`);
-      if (error) {
-        callback(error);
-        return;
-      }
-
-      callback(null, state);
-    });
-  }
-
   async startCleaning(state, callback) {
     if (state) {
       this.log.debug('Executing cleaning');
@@ -234,7 +100,7 @@ class ValetudoXiaomiVacuum {
         this.log.error(`Failed to start cleaning: ${e}`);
       }
     } else {
-      this.device.stopCleaning((error) => {
+      this.device.goHome((error) => {
         callback(error);
       });
     }
@@ -251,43 +117,12 @@ class ValetudoXiaomiVacuum {
     });
   }
 
-  async startSpotCleaning(state, callback) {
-    const { log } = this;
-
-    if (state) {
-      log.debug('Executing spot cleaning');
-
-      this.device.startSpotCleaning((error) => {
-        callback(error);
-      });
-    } else {
-      this.device.stopCleaning(callback);
-    }
-  }
-
-  isSpotCleaning(callback) {
-    this.device.isSpotCleaning((error, status) => {
-      this.log.debug(`Is spot cleaning? error: ${error}, state: ${status}`);
-
-      if (error) {
-        callback(error);
-        return;
-      }
-
-      callback(null, status);
-    });
-  }
 
   constructor(log, config) {
     this.services = [];
     this.log = log;
     this.name = config.name || 'Vacuum';
-    this.commandFind = config.commandFind || `Find ${this.name}`;
-    this.commandGoHome = config.commandGoHome || `Go Home, ${this.name}`;
     this.commandClean = config.commandClean || `Clean, ${this.name}`;
-    this.commandSpotClean = config.commandSpotClean || `Spot Clean, ${this.name}`;
-    this.commandHighSpeedMode = config.commandHighSpeedMode || `High speed mode ${this.name}`;
-    this.commandMoppingMode = config.commandMoppingMode || `Mopping mode ${this.name}`;
     this.commandBattery = config.commandBattery || `${this.name} Battery`;
     this.lowBatteryThreshold = 10;
 
@@ -306,48 +141,11 @@ class ValetudoXiaomiVacuum {
       .on('get', (callback) => { this.getVersion(callback); });
     this.services.push(this.serviceInfo);
 
-    this.findService = new Service.Switch(this.commandFind, 'identify');
-    this.findService.getCharacteristic(Characteristic.On)
-      .on('set', (value, callback) => { this.doFind(value, callback); });
-    this.services.push(this.findService);
-
-    this.goHomeService = new Service.Switch(this.commandGoHome, 'home');
-    this.goHomeService.getCharacteristic(Characteristic.On)
-      .on('set', (value, callback) => {
-        this.goHome(value, callback);
-      })
-      .on('get', (callback) => { this.isGoingHome(callback); });
-    this.services.push(this.goHomeService);
-
     this.cleanService = new Service.Switch(this.commandClean, 'clean');
     this.cleanService.getCharacteristic(Characteristic.On)
       .on('set', (value, callback) => { this.startCleaning(value, callback); })
       .on('get', (callback) => { this.isCleaning(callback); });
     this.services.push(this.cleanService);
-
-    this.spotCleanService = new Service.Switch(this.commandSpotClean, 'spotclean');
-    this.spotCleanService.getCharacteristic(Characteristic.On)
-      .on('set', (value, callback) => { this.startSpotCleaning(value, callback); })
-      .on('get', (callback) => { this.isSpotCleaning(callback); });
-    this.services.push(this.spotCleanService);
-
-    if (this.device.powerControl) {
-      if (this.device.powerControl.highSpeed) {
-        this.highSpeedService = new Service.Switch(this.commandHighSpeedMode, 'highspeed');
-        this.highSpeedService.getCharacteristic(Characteristic.On)
-          .on('set', (value, callback) => { this.setHighSpeedMode(value, callback); })
-          .on('get', (callback) => { this.getHighSpeedMode(callback); });
-        this.services.push(this.highSpeedService);
-      }
-
-      if (this.device.powerControl.mop) {
-        this.mopService = new Service.Switch(this.commandMoppingMode, 'mopspeed');
-        this.mopService.getCharacteristic(Characteristic.On)
-          .on('set', (value, callback) => { this.setMopMode(value, callback); })
-          .on('get', (callback) => { this.getMopMode(callback); });
-        this.services.push(this.mopService);
-      }
-    }
 
     this.batteryService = new Service.BatteryService(this.commandBattery);
     this.batteryService
